@@ -1,0 +1,23 @@
+# Config with secrets
+config.py
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# Data
+data/
+
+# JetBrains IDE
+.idea/
+
+# macOS
+.DS_Store
