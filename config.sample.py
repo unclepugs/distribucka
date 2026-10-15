@@ -8,6 +8,8 @@ SOLVER_KEY         = ""                         # 2captcha.com API key — leave
 METER_IN           = ""                         # delivery point ID for consumption (EIC code)
 METER_OUT          = ""                         # delivery point ID for production (EIC code)
 
+HDO_CODE           = 459                        # tariff switching code (HDO)
+
 OUTPUT_TYPE        = "text"                     # text | short
 DATA_DIR           = "data"                     # directory for history.db and latest.json
 
