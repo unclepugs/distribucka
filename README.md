@@ -7,6 +7,7 @@ Portál neponúka verejné API — script ho obchádza priamymi HTTP volaniami s
 - Denné súčty spotreby a výroby (FVE) za aktuálny mesiac
 - 15-minútové intervalové dáta pre každý deň
 - Odpočty meradla (mesačné stavy)
+- Rozvrh prepínania VT/NT taríf pre tvoj HDO kód
 - SQLite databáza na históriu + `latest.json` pre Home Assistant
 
 ---
@@ -21,14 +22,16 @@ Portál neponúka verejné API — script ho obchádza priamymi HTTP volaniami s
 ## Štruktúra projektu
 
 ```
-├── collector.py         # hlavný script
+├── collector.py         # sťahuje spotrebu a výrobu
+├── tariffs.py           # sťahuje rozvrh VT/NT prepínania
 ├── config.py            # tvoje nastavenia (v .gitignore, necommitovať!)
 ├── config.sample.py     # šablóna — skopíruj a vyplň
 ├── requirements.txt     # Python závislosti
 ├── .gitignore
 └── data/                # vytvorí sa automaticky
-    ├── history.db       # SQLite — celá história
-    └── latest.json      # aktuálny mesiac + 15-min detail (pre HA)
+    ├── history.db       # SQLite — celá história spotreby/výroby
+    ├── latest.json      # aktuálny mesiac + 15-min detail (pre HA)
+    └── tariffs.json     # VT/NT rozvrh pre nakonfigurovaný HDO kód
 ```
 
 ---
@@ -55,6 +58,7 @@ SECRET             = "heslo"
 SOLVER_KEY         = "tvoj_api_kluc"       # z 2captcha.com → Dashboard → API key
 METER_IN           = ""          # ID odberného miesta (spotreba)
 METER_OUT          = ""          # ID odberného miesta (FVE výroba)
+HDO_CODE           = 459        # kód prepínania VT/NT taríf
 OUTPUT_TYPE        = "text"               # text | short
 DATA_DIR           = "data"               # adresár pre history.db a latest.json
 WARN_BALANCE_BELOW = 1.0                  # upozornenie pri nízkom kredite 2captcha ($)
@@ -67,10 +71,14 @@ WARN_BALANCE_BELOW = 1.0                  # upozornenie pri nízkom kredite 2cap
 ### 3. Spustenie
 
 ```bash
+# spotreba a výroba
 python3 collector.py
+
+# VT/NT rozvrh taríf
+python3 tariffs.py
 ```
 
-Príklady výstupov:
+Príklady výstupov `collector.py`:
 
 ```bash
 # Ľudsky čitateľný výpis (debug)
@@ -78,7 +86,6 @@ OUTPUT_TYPE=text python3 collector.py
 
 # Len mesačné súčty ako JSON (spotreba / výroba / delta)
 OUTPUT_TYPE=short python3 collector.py
-
 ```
 
 ### 4. Automatické spúšťanie (cron)
@@ -91,6 +98,7 @@ crontab -e
 
 ```
 0 6 * * * cd /cesta/k/projektu && python3 collector.py >> /tmp/collector.log 2>&1
+0 5 * * * cd /cesta/k/projektu && python3 tariffs.py >> /tmp/tariffs.log 2>&1
 ```
 
 ---
@@ -121,6 +129,23 @@ Aktualizuje sa pri každom spustení. Obsahuje:
 ```
 
 `delta_kwh_month < 0` znamená, že FVE produkovala viac ako dom spotreboval.
+
+### `data/tariffs.json`
+
+Aktualizuje sa spustením `tariffs.py`. Obsahuje NT intervaly (zo zdroja) a dopočítané VT intervaly:
+
+```json
+{
+  "hdo_code": 459,
+  "nt_intervals": [
+    { "t_type": "nt", "t_from": "23:45", "t_to": "6:15", "weekday": true, "weekend": true, "..." : "..." }
+  ],
+  "vt_intervals": [
+    { "t_type": "vt", "t_from": "06:15", "t_to": "07:15" }
+  ],
+  "all_intervals": [...]
+}
+```
 
 ### `data/history.db`
 
