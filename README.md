@@ -31,8 +31,9 @@ Portál neponúka verejné API — script ho obchádza priamymi HTTP volaniami s
 ├── requirements.txt     # Python závislosti
 ├── .gitignore
 └── data/                # vytvorí sa automaticky
-    ├── history.db       # SQLite — celá história spotreby/výroby
+    ├── history.db       # SQLite — celá história spotreby/výroby + tabuľka costs
     ├── latest.json      # aktuálny mesiac + 15-min detail (pre HA)
+    ├── costs.json       # finančné náklady aktuálneho mesiaca (pre HA)
     └── tariffs.json     # VT/NT rozvrh pre nakonfigurovaný HDO kód
 ```
 
