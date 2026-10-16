@@ -91,7 +91,9 @@ OUTPUT_TYPE=text python3 collector.py
 OUTPUT_TYPE=short python3 collector.py
 ```
 
-**Inkrementálne sťahovanie:** Script si pri každom spustení pozrie `history.db` a stiahne len dáta, ktoré ešte nemá — od prvého dňa po poslednom `ALL_VALID` dennom zázname. Ak je DB aktuálna, skript skončí bez prihlásenia (bez spotreby 2captcha kreditu).
+**Inkrementálne sťahovanie:** Script si pri každom spustení pozrie `history.db`, nájde posledný deň so stavom `ALL_VALID` a stiahne všetko od nasledujúceho dňa. `VM` záznamy (odhadnuté hodnoty) teda vždy padnú za `from_date` a pri každom spustení sa prepíšu (`INSERT OR REPLACE`) — keď distribútor nahradí odhad reálnym meraním, DB sa automaticky aktualizuje. Ak je DB aktuálna (žiadne nové dni), script skončí bez prihlásenia (bez spotreby 2captcha kreditu).
+
+> **Obmedzenie:** Ak distribútor retroaktívne opraví `VM` na `ALL_VALID` pre deň, ktorý je *starší* ako posledný `ALL_VALID` záznam v DB, collector to neodhalí — takéto spätné opravy sú však v praxi výnimočné.
 
 **Prvé spustenie (prázdna DB):** Script automaticky stiahne dáta od 1. januára aktuálneho roku — portál historické dáta podporuje.
 
@@ -181,7 +183,7 @@ SQLite tabuľka `readings`:
 | `delivery_point_id` | ID odberného miesta |
 | `type` | `consumption` alebo `production` |
 | `value_kwh` | energia v kWh |
-| `state` | `ALL_VALID` / `VM` |
+| `state` | `ALL_VALID` = reálne namerané a overené; `VM` (Virtuálne Meranie) = odhadnutá hodnota od distribútora (merač nekomunikoval alebo interval ešte nie je uzavretý) |
 | `interval_minutes` | `1440` (deň) alebo `15` (štvrťhodina) |
 | `fetched_at` | kedy sa záznam stiahol |
 
@@ -262,7 +264,8 @@ V HA to môžeš zachytiť cez log sensor alebo notifikáciu z cron mailu.
 ## Poznámky
 
 - Script sa prihlasuje cez 2captcha **len keď je čo sťahovať** — ak je DB aktuálna, captcha sa nerieši
-- Sťahuje len **chýbajúce dáta** od posledného platného záznamu; pri prvom spustení stiahne celý aktuálny mesiac
+- Sťahuje len **chýbajúce dáta** od posledného `ALL_VALID` záznamu; `VM` záznamy sa pri každom spustení prepíšu aktuálnymi hodnotami z API
+- Mesačné súčty a `latest.json` počítajú **len zo záznamov `ALL_VALID`** — `VM` hodnoty sa do výpočtov nezahŕňajú, kým ich distribútor nepotvrdí
 - Portál vracia dáta za **aktuálny mesiac** — história sa buduje postupne v `history.db`
 - 15-minútové dáta sú dostupné s oneskorením (predchádzajúci deň)
 - `measuredValue` z API je v **kW** (okamžitý výkon) — script ho konvertuje na kWh (`× 0.25`)
