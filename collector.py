@@ -8,7 +8,7 @@ import os
 import sys
 import sqlite3
 import calendar
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from pathlib import Path
 
 import requests
@@ -193,11 +193,11 @@ def get_devices(session, xcsrf, user, dp_id):
     }
 
 
-def get_interval_data(session, xcsrf, user, dp_id):
+def get_interval_data(session, xcsrf, user, dp_id, from_date):
     payload = {
         "filter": {
             "deliveryPointId":  dp_id,
-            "from":             FROM_DATE,
+            "from":             from_date,
             "to":               TO_DATE,
             "loadProfileRoles": True,
         },
@@ -275,6 +275,49 @@ def init_db(db_path):
     return conn
 
 
+def _last_valid_date(db_path):
+    """Returns the date of the last ALL_VALID daily record, or None if DB is empty/missing."""
+    if not os.path.exists(db_path):
+        return None
+    conn = sqlite3.connect(db_path)
+    try:
+        row = conn.execute(
+            "SELECT MAX(ts) FROM readings WHERE interval_minutes = 1440 AND state = 'ALL_VALID'"
+        ).fetchone()
+        return date.fromisoformat(row[0]) if row and row[0] else None
+    finally:
+        conn.close()
+
+
+def _load_month_from_db(conn):
+    """Load all daily and 15-min records for the current month from DB."""
+    month_start = f"{_today.year}-{_today.month:02d}-01"
+    rows = conn.execute(
+        """SELECT ts, delivery_point_id, type, value_kwh, state, interval_minutes
+           FROM readings WHERE DATE(ts) >= ? ORDER BY ts""",
+        (month_start,),
+    ).fetchall()
+    cols = ("ts", "delivery_point_id", "type", "value_kwh", "state", "interval_minutes")
+    daily     = [dict(zip(cols, r)) for r in rows if r[5] == 1440]
+    intervals = [dict(zip(cols, r)) for r in rows if r[5] == 15]
+    return daily, intervals
+
+
+def _compute_month_output(conn):
+    """Sum ALL_VALID daily kWh per type for the current month."""
+    month_start = f"{_today.year}-{_today.month:02d}-01"
+    rows = conn.execute(
+        """SELECT type, SUM(value_kwh) FROM readings
+           WHERE interval_minutes = 1440 AND state = 'ALL_VALID' AND DATE(ts) >= ?
+           GROUP BY type""",
+        (month_start,),
+    ).fetchall()
+    output = {t: v for t, v in rows}
+    if "consumption" in output and "production" in output:
+        output["delta"] = output["consumption"] - output["production"]
+    return output
+
+
 def save_to_db(conn, dp_id, dp_type, records, fetched_at):
     conn.executemany(
         """INSERT OR REPLACE INTO readings
@@ -319,16 +362,14 @@ def write_latest_json(output, daily_records, interval_records, json_path, fetche
 # Main flow
 # ---------------------------------------------------------------------------
 
-def fetch_all(session, xcsrf):
+def fetch_all(session, xcsrf, from_date):
     user   = get_user(session, xcsrf)
     dp_ids = get_delivery_points(session, xcsrf, user)
 
     Path(DATA_DIR).mkdir(exist_ok=True)
-    conn       = init_db(os.path.join(DATA_DIR, "history.db"))
+    db_path    = os.path.join(DATA_DIR, "history.db")
+    conn       = init_db(db_path)
     fetched_at = datetime.now().isoformat(timespec="seconds")
-    output     = {}
-    all_daily     = []
-    all_intervals = []
 
     for dp_id in dp_ids:
         dp_type = (
@@ -338,25 +379,16 @@ def fetch_all(session, xcsrf):
         )
         log(f"\n--- {dp_id} ({dp_type}) ---")
 
-        daily, intervals = get_interval_data(session, xcsrf, user, dp_id)
+        daily, intervals = get_interval_data(session, xcsrf, user, dp_id, from_date)
         save_to_db(conn, dp_id, dp_type, daily + intervals, fetched_at)
-
-        valid_total = sum(r["value_kwh"] for r in daily if r["state"] == "ALL_VALID")
-        if dp_id == METER_IN:
-            output["consumption"] = valid_total
-        if dp_id == METER_OUT:
-            output["production"] = valid_total
-
-        all_daily.extend([{**r, "delivery_point_id": dp_id, "type": dp_type} for r in daily])
-        all_intervals.extend([{**r, "delivery_point_id": dp_id, "type": dp_type} for r in intervals])
 
         device = get_devices(session, xcsrf, user, dp_id)
         get_register_data(session, xcsrf, user, dp_id, device)
 
+    # Build latest.json from the full current month in DB (not just newly fetched records)
+    all_daily, all_intervals = _load_month_from_db(conn)
+    output = _compute_month_output(conn)
     conn.close()
-
-    if "production" in output and "consumption" in output:
-        output["delta"] = output["consumption"] - output["production"]
 
     write_latest_json(output, all_daily, all_intervals, os.path.join(DATA_DIR, "latest.json"), fetched_at)
     return output
@@ -370,6 +402,15 @@ def main():
         print("SOLVER_KEY must be set in config.py.")
         sys.exit(1)
 
+    db_path = os.path.join(DATA_DIR, "history.db")
+    last    = _last_valid_date(db_path)
+    from_date = (last + timedelta(days=1)).isoformat() if last else f"{_today.year}-01-01"
+    log(f"Last valid record: {last or 'none'} → fetching from {from_date} to {TO_DATE}")
+
+    if from_date > _today.isoformat():
+        log("Already up to date — nothing to fetch.")
+        return
+
     session = create_session()
     log("Solving captcha via 2captcha...")
     xcsrf = login(session, solve_captcha())
@@ -377,7 +418,7 @@ def main():
         print("Login failed — check credentials or 2captcha API key.")
         sys.exit(1)
 
-    output = fetch_all(session, xcsrf)
+    output = fetch_all(session, xcsrf, from_date)
 
     if OUTPUT_TYPE == "short":
         print(json.dumps(output, indent=2, ensure_ascii=False))

@@ -9,6 +9,7 @@ Portál neponúka verejné API — script ho obchádza priamymi HTTP volaniami s
 - Odpočty meradla (mesačné stavy)
 - Rozvrh prepínania VT/NT taríf pre tvoj HDO kód
 - SQLite databáza na históriu + `latest.json` pre Home Assistant
+- Výpočet finančných nákladov na elektrinu za deň alebo mesiac (vrátane Flexi výkupu)
 
 ---
 
@@ -24,6 +25,7 @@ Portál neponúka verejné API — script ho obchádza priamymi HTTP volaniami s
 ```
 ├── collector.py         # sťahuje spotrebu a výrobu
 ├── tariffs.py           # sťahuje rozvrh VT/NT prepínania
+├── costs.py             # výpočet finančných nákladov za deň / mesiac
 ├── config.py            # tvoje nastavenia (v .gitignore, necommitovať!)
 ├── config.sample.py     # šablóna — skopíruj a vyplň
 ├── requirements.txt     # Python závislosti
@@ -87,6 +89,27 @@ OUTPUT_TYPE=text python3 collector.py
 # Len mesačné súčty ako JSON (spotreba / výroba / delta)
 OUTPUT_TYPE=short python3 collector.py
 ```
+
+**Inkrementálne sťahovanie:** Script si pri každom spustení pozrie `history.db` a stiahne len dáta, ktoré ešte nemá — od prvého dňa po poslednom `ALL_VALID` dennom zázname. Ak je DB aktuálna, skript skončí bez prihlásenia (bez spotreby 2captcha kreditu).
+
+**Prvé spustenie (prázdna DB):** Script automaticky stiahne dáta od 1. januára aktuálneho roku — portál historické dáta podporuje.
+
+### Výpočet nákladov (`costs.py`)
+
+Vypočíta finančné náklady na elektrinu z dát v `history.db`. Vyžaduje `tariffs.json` (spusti `tariffs.py`) a `RATES` v `config.py`.
+
+```bash
+# Včerajší deň (default)
+python3 costs.py
+
+# Konkrétny deň
+python3 costs.py --date 2026-10-14
+
+# Celý mesiac
+python3 costs.py --month 2026-10
+```
+
+**Cenník (RATES v `config.py`):** Každý rok doplň nový záznam `RATES[rok]` podľa aktuálneho [Integrovaného cenníka ZSE](https://www.zse.sk/dokumenty-a-tlaciva). Ak cenník pre daný rok chýba, script skončí s jasnou chybovou hláškou.
 
 ### 4. Automatické spúšťanie (cron)
 
@@ -237,7 +260,8 @@ V HA to môžeš zachytiť cez log sensor alebo notifikáciu z cron mailu.
 
 ## Poznámky
 
-- Script sa pri každom spustení **vždy prihlasuje** cez 2captcha (~1 captcha solve / deň)
+- Script sa prihlasuje cez 2captcha **len keď je čo sťahovať** — ak je DB aktuálna, captcha sa nerieši
+- Sťahuje len **chýbajúce dáta** od posledného platného záznamu; pri prvom spustení stiahne celý aktuálny mesiac
 - Portál vracia dáta za **aktuálny mesiac** — história sa buduje postupne v `history.db`
 - 15-minútové dáta sú dostupné s oneskorením (predchádzajúci deň)
 - `measuredValue` z API je v **kW** (okamžitý výkon) — script ho konvertuje na kWh (`× 0.25`)

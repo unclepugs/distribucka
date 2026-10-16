@@ -1,6 +1,9 @@
 # Config with secrets
 config.py
 
+# Claude memory
+.claude/memory/
+
 # Python
 __pycache__/
 *.py[cod]
@@ -21,3 +24,4 @@ data/
 
 # macOS
 .DS_Store
+/financna_analyza.md
