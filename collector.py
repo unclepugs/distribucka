@@ -205,7 +205,12 @@ def get_interval_data(session, xcsrf, user, dp_id, from_date):
         "businessRoleId":    user["businessRoleId"],
         "source":            SOURCE,
     }
-    profile = _post(session, URLS["profile_data"], payload, xcsrf).json()["data"]["profileData"]
+    resp = _post(session, URLS["profile_data"], payload, xcsrf)
+    body = resp.json()
+    if "data" not in body:
+        print(f"profile_data unexpected response: {body}")
+        sys.exit(1)
+    profile = body["data"]["profileData"]
 
     daily_records    = []   # one record per day (kWh total)
     interval_records = []   # one record per 15-min slot (kWh = kW × 0.25h)
