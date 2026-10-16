@@ -208,6 +208,9 @@ def get_interval_data(session, xcsrf, user, dp_id, from_date):
     resp = _post(session, URLS["profile_data"], payload, xcsrf)
     body = resp.json()
     if "data" not in body:
+        if body.get("messageDestination") == "NOTIFY" and body.get("messages") == []:
+            log(f"  No data available for {payload['filter']['from']} – {payload['filter']['to']} (portal returned empty NOTIFY)")
+            return [], []
         print(f"profile_data unexpected response: {body}")
         sys.exit(1)
     profile = body["data"]["profileData"]
