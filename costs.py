@@ -197,7 +197,8 @@ def write_costs_json(conn, computed_at):
 
     rows = conn.execute(
         """SELECT date, consumption_total, production_total,
-                  cost_consumption, credit_flexi, net_variable
+                  cost_consumption, credit_flexi, net_variable,
+                  consumption_vt, consumption_nt
            FROM costs WHERE date >= ? ORDER BY date""",
         (month_start,),
     ).fetchall()
@@ -230,6 +231,8 @@ def write_costs_json(conn, computed_at):
         "daily": [
             {
                 "date":              r[0],
+                "consumption_vt":    r[6],
+                "consumption_nt":    r[7],
                 "consumption_total": r[1],
                 "production_total":  r[2],
                 "cost_consumption":  r[3],

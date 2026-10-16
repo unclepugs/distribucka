@@ -358,6 +358,27 @@ def write_latest_json(output, daily_records, interval_records, json_path, fetche
     log(f"latest.json written → {json_path} ({len(daily_records)} days, {len(last_day_intervals)} × 15-min for {last_day})")
 
 
+def write_intervals_json(interval_records, json_path):
+    """Writes slimmed 15-min data for Home Assistant (stays under 16 KB attribute limit)."""
+    if not interval_records:
+        return
+    last_day = sorted({r["ts"][:10] for r in interval_records})[-1]
+    day_recs  = [r for r in interval_records if r["ts"].startswith(last_day)]
+
+    def slim(typ):
+        return [{"t": r["ts"][11:16], "kwh": r["value_kwh"]}
+                for r in day_recs if r["type"] == typ]
+
+    payload = {
+        "date":        last_day,
+        "consumption": slim("consumption"),
+        "production":  slim("production"),
+    }
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2, ensure_ascii=False)
+    log(f"intervals.json written → {json_path} ({len(day_recs)} records for {last_day})")
+
+
 # ---------------------------------------------------------------------------
 # Main flow
 # ---------------------------------------------------------------------------
@@ -391,6 +412,7 @@ def fetch_all(session, xcsrf, from_date):
     conn.close()
 
     write_latest_json(output, all_daily, all_intervals, os.path.join(DATA_DIR, "latest.json"), fetched_at)
+    write_intervals_json(all_intervals, os.path.join(DATA_DIR, "intervals.json"))
     return output
 
 
