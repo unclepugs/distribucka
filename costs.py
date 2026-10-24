@@ -191,6 +191,46 @@ def save_cost(conn, r, rates_year, computed_at):
     conn.commit()
 
 
+def _month_summaries(conn):
+    rows = conn.execute(
+        """SELECT strftime('%Y-%m', date) AS month,
+                  COUNT(*),
+                  SUM(consumption_vt), SUM(consumption_nt), SUM(consumption_total),
+                  SUM(production_total),
+                  SUM(cost_consumption), SUM(credit_flexi),
+                  SUM(net_variable)
+           FROM costs
+           GROUP BY month
+           ORDER BY month"""
+    ).fetchall()
+
+    result = []
+    for month_str, days, cons_vt, cons_nt, cons, prod, cost, cred, net_var in rows:
+        year = int(month_str[:4])
+        try:
+            rates = get_rates(year)
+            fixed = sum(rates["fixed_eur_month"].values())
+            total = round(net_var + fixed, 4)
+            avg   = round(total / cons, 4) if cons else None
+        except KeyError:
+            fixed = total = avg = None
+        result.append({
+            "month":              month_str,
+            "days_with_data":     days,
+            "consumption_vt_kwh": round(cons_vt, 4),
+            "consumption_nt_kwh": round(cons_nt, 4),
+            "consumption_kwh":    round(cons, 4),
+            "production_kwh":     round(prod, 4),
+            "cost_eur":           round(cost, 4),
+            "credit_eur":         round(cred, 4),
+            "net_variable_eur":   round(net_var, 4),
+            "fixed_eur":          round(fixed, 2) if fixed is not None else None,
+            "total_eur":          total,
+            "avg_price_eur_kwh":  avg,
+        })
+    return result
+
+
 def write_costs_json(conn, computed_at):
     today = date.today()
     month_start = f"{today.year}-{today.month:02d}-01"
@@ -241,6 +281,7 @@ def write_costs_json(conn, computed_at):
             }
             for r in rows
         ],
+        "months": _month_summaries(conn),
     }
 
     path = os.path.join(DATA_DIR, "costs.json")
