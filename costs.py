@@ -231,22 +231,27 @@ def _month_summaries(conn):
     return result
 
 
+DAILY_DAYS = 31   # rolling window for the "daily" list (spans month boundaries)
+
+
 def write_costs_json(conn, computed_at):
-    today = date.today()
-    month_start = f"{today.year}-{today.month:02d}-01"
+    # Data arrive with a 1-day lag, so the summary month is the month of yesterday
+    # (on the 1st this still shows the just-finished month instead of an empty one).
+    ref = date.today() - timedelta(days=1)
+    month_start = f"{ref.year}-{ref.month:02d}-01"
+    daily_start = (ref - timedelta(days=DAILY_DAYS - 1)).isoformat()
 
-    rows = conn.execute(
-        """SELECT date, consumption_total, production_total,
-                  cost_consumption, credit_flexi, net_variable,
-                  consumption_vt, consumption_nt
-           FROM costs WHERE date >= ? ORDER BY date""",
-        (month_start,),
-    ).fetchall()
+    query = """SELECT date, consumption_total, production_total,
+                      cost_consumption, credit_flexi, net_variable,
+                      consumption_vt, consumption_nt
+               FROM costs WHERE date >= ? ORDER BY date"""
+    rows  = conn.execute(query, (month_start,)).fetchall()
+    daily = conn.execute(query, (daily_start,)).fetchall()
 
-    if not rows:
+    if not daily:
         return
 
-    year   = today.year
+    year   = ref.year
     rates  = get_rates(year)
     fixed  = sum(rates["fixed_eur_month"].values())
 
@@ -258,7 +263,7 @@ def write_costs_json(conn, computed_at):
 
     payload = {
         "computed_at":        computed_at,
-        "month":              f"{today.year}-{today.month:02d}",
+        "month":              f"{ref.year}-{ref.month:02d}",
         "days_with_data":     len(rows),
         "consumption_kwh":    round(cons, 4),
         "production_kwh":     round(prod, 4),
@@ -279,7 +284,7 @@ def write_costs_json(conn, computed_at):
                 "credit_flexi":      r[4],
                 "net_variable":      r[5],
             }
-            for r in rows
+            for r in daily
         ],
         "months": _month_summaries(conn),
     }
