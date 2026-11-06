@@ -260,6 +260,7 @@ def write_costs_json(conn, computed_at):
     cost  = sum(r[3] for r in rows)
     cred  = sum(r[4] for r in rows)
     net   = cost - cred + fixed
+    months = _month_summaries(conn)
 
     payload = {
         "computed_at":        computed_at,
@@ -286,7 +287,10 @@ def write_costs_json(conn, computed_at):
             }
             for r in daily
         ],
-        "months": _month_summaries(conn),
+        "months": months,
+        # Months of the reference year only — rows for the HA "Invoice" flex-table-card
+        # (the card cannot filter rows; its footer sums them into the yearly total).
+        "months_current_year": [m for m in months if m["month"].startswith(f"{ref.year}-")],
     }
 
     path = os.path.join(DATA_DIR, "costs.json")
